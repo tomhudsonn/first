@@ -1,0 +1,6 @@
+Enable-MailUser Sean.Davidson –ExternalEmailAddress sean.davidson@pizzaexpress.com
+
+
+Add-MailboxPermission –Identity <ITServicedesk@pizzaexpress.com> -User <sasha.gill@pizzaexpress.com> -AccessRights SendAs –AutoMapping $false
+
+
