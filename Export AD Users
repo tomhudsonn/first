@@ -1,0 +1,1 @@
+Get-ADUser -filter * |select-object SamAccountName | Export-Csv c:\scripts\test.txt
