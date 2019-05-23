@@ -1,0 +1,172 @@
+Function Connect-Exchange {
+ 
+    param(
+        [Parameter( Mandatory=$false)]
+        [string]$URL="mail-dc-001.ad.pizzaexpress.com"
+    )
+    
+    $Credentials = Get-Credential -Message "Enter your Exchange admin credentials"
+ 
+    $ExOPSession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri http://$URL/PowerShell/ -Authentication Kerberos -Credential $Credentials -Name "Exchange Onpremise"
+ 
+    Import-PSSession $ExOPSession
+ 
+}
+
+Function Disconnect-Exchange {
+    
+    Remove-PSSession -Name "Exchange Onpremise"
+ 
+}
+
+Function Connect-EXOnline {
+ 
+    $URL = "https://ps.outlook.com/powershell"
+    
+    $Credentials = Get-Credential -Message "Enter your Office 365 admin credentials"
+ 
+    $EXOSession = New-PSSession -ConfigurationName Microsoft.Exchange -ConnectionUri $URL -Credential $Credentials -Authentication Basic -AllowRedirection -Name "Exchange Online"
+ 
+    Import-PSSession $EXOSession -Prefix "EXO"
+ 
+}
+
+Function Disconnect-EXOnline {
+    
+    Remove-PSSession -Name "Exchange Online"
+ 
+}
+
+Function Connect-AD {
+$Credentials = Get-Credential -Message "Domain Admin Credentials"
+$Session = New-PSSession -ComputerName AD-DC-001.ad.pizzaexpress.com -Credential $Credentials -Name "Active Directory"
+Invoke-Command $Session -Scriptblock { Import-Module ActiveDirectory }
+Import-PSSession -Session $Session -Module ActiveDirectory
+}
+
+Function Disconnect-AD {
+    
+    Remove-PSSession -Name "Active Directory"
+ 
+}
+
+# Prompt the user to enter the username for the new starter
+$ADUserName = Read-Host "Please enter the username of the new starter"
+$ADUserDetails = Get-ADUser $Employee -properties *
+
+# Prompt the user to enter the email address for the new starter
+#$EmailAddress = Read-Host "Please enter the email address of the new starter"
+
+# Import on-premises Exchange
+Connect-Exchange
+
+# Mail enable the user account
+Write-Host "Enabling on premise user..." -ForegroundColor Green
+Enable-MailUser $ADUserDetails.mail –ExternalEmailAddress $ADUserDetails.mail
+
+# Change the AD properties to remote mailbox
+# Import AD module
+
+Connect-AD
+
+Write-Host "Changing AD properties..." -ForegroundColor Green
+Set-ADUser $ADUserName –Replace @{msExchRecipientDisplayType = "-2147483642"}
+Set-ADUser $ADUserName –Replace @{msExchRecipientTypeDetails = "2147483648"}
+Set-ADUser $ADUserName –Replace @{msExchRemoteRecipientType = "4"}
+
+
+# Get GUID of mailbox from exchange online
+Connect-EXOnline
+Write-Host "Grabbing the users Exchange Online GUID" -ForegroundColor Green
+$GUID = (Get-EXOMailbox $ADUserDetails.mail).ExchangeGUID
+
+
+# Configure remote mailbox settings
+Write-Host "Configuring remote mailbox settings..." -ForegroundColor Green
+Set-RemoteMailbox $ADUserDetails.mail –RemoteRoutingAddress "SMTP:$ADUsername@peglobal.mail.onmicrosoft.com"
+
+Write-Host "Setting the users onprem GUID" -ForegroundColor Green
+Set-RemoteMailbox $ADUsername -ExchangeGUID $GUID
+
+Disconnect-Exchange
+Disconnect-EXOnline
+Disconnect-AD
+# SIG # Begin signature block
+# MIIOWQYJKoZIhvcNAQcCoIIOSjCCDkYCAQExCzAJBgUrDgMCGgUAMGkGCisGAQQB
+# gjcCAQSgWzBZMDQGCisGAQQBgjcCAR4wJgIDAQAABBAfzDtgWUsITrck0sYpfvNR
+# AgEAAgEAAgEAAgEAAgEAMCEwCQYFKw4DAhoFAAQU7DImTRiXxKLVpObTaAHi0D+F
+# fp6ggguoMIIFOTCCBCGgAwIBAgITGgAAAAp623+tpMc61gACAAAACjANBgkqhkiG
+# 9w0BAQsFADAZMRcwFQYDVQQDEw5QS0ktQklSLTAwMS1DQTAeFw0xNDExMDQyMTQw
+# NTBaFw0yNDExMDQyMTUwNTBaMGMxEzARBgoJkiaJk/IsZAEZFgNjb20xHDAaBgoJ
+# kiaJk/IsZAEZFgxwaXp6YWV4cHJlc3MxEjAQBgoJkiaJk/IsZAEZFgJhZDEaMBgG
+# A1UEAxMRYWQtUEtJLUJJUi0wMDItQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAw
+# ggEKAoIBAQCxSjqeBQvNyV/A8miHXzqgy7/79DG1dSPyQm7P+PufiPod5U8pQxir
+# Bm/9Qnyvq0A9HtkbDtf3gnF/8p7Q5aAFJsrlygdAQ2eKIFBJfNYqQjxYePv6rn93
+# vTt2lHUhNGhb4WsV0WCwQo3YrRA4FEfGkwsgiBmLLe8b1p8iLFCt57N9LV1vNS0g
+# 0DkVq9590KSZ5G4heLAHsbMKGre/iaQQo201T3BslQbSZagzuFiG9ZlHqSBt+8yA
+# Fce1HTuIH1WWq1nPBUQds//hCULBoom8DhjA6GT7G+JlBNm2N6P+Sk4YKLseQ6zp
+# qHQdsZSTwARP82ZntoyEuJRcJiWeq1UtAgMBAAGjggIuMIICKjAQBgkrBgEEAYI3
+# FQEEAwIBATAjBgkrBgEEAYI3FQIEFgQU3497IGxbyKtPr9vPiUD7DR6q6wswHQYD
+# VR0OBBYEFFJck86XGvikQzNL/e6S5g3Ez19MMBkGCSsGAQQBgjcUAgQMHgoAUwB1
+# AGIAQwBBMAsGA1UdDwQEAwIBhjAPBgNVHRMBAf8EBTADAQH/MB8GA1UdIwQYMBaA
+# FGyARowIHYYaESldVXBA8UDUpBFWMIIBFwYDVR0fBIIBDjCCAQowggEGoIIBAqCB
+# /4aBx2xkYXA6Ly8vQ049UEtJLUJJUi0wMDEtQ0EoMiksQ049UEtJLUJJUi0wMDEs
+# Q049Q0RQLENOPVB1YmxpYyUyMEtleSUyMFNlcnZpY2VzLENOPVNlcnZpY2VzLENO
+# PUNvbmZpZ3VyYXRpb24sREM9YWQsREM9cGl6emFleHByZXNzLERDPWNvbT9jZXJ0
+# aWZpY2F0ZVJldm9jYXRpb25MaXN0P2Jhc2U/b2JqZWN0Q2xhc3M9Y1JMRGlzdHJp
+# YnV0aW9uUG9pbnSGM2h0dHA6Ly9wa2ktYmlyLTAwMi9DZXJ0RW5yb2xsL1BLSS1C
+# SVItMDAxLUNBKDIpLmNybDBdBggrBgEFBQcBAQRRME8wTQYIKwYBBQUHMAKGQWZp
+# bGU6Ly8vL1BLSS1CSVItMDAxL0NlcnRFbnJvbGwvUEtJLUJJUi0wMDFfUEtJLUJJ
+# Ui0wMDEtQ0EoMikuY3J0MA0GCSqGSIb3DQEBCwUAA4IBAQAjGSmo9+toprknVADf
+# 5gFnsieAkGqVP9BxCOtZs2qbxkn6MwTZD95XhkN6b55uPGanfgHKZTnrbF5MYhQO
+# zCtSdLq3sAYTkEQNZZigWm2pHzBbVEXxEkN499nisAHNAYdUtHwWmz9V636+Bbrv
+# rpD2PyvQmyoHfBsVHklVziy4K//07S/h/5Q9hvB3JKRdG9i8PI0dBjgRNDYWWsCY
+# tTl9X5H4Udv3KjDt8IRHuT4YydHElbiveDrTMej8c2EvwO1pvgBvhbc5rQQXy7QF
+# Z1R6aOW6/N2nZbRfylNTSa0mdokxIraccLOXXe3adU36oaR4fs/ItxfDehVQXefK
+# y5krMIIGZzCCBU+gAwIBAgITaAAAHrO8LQJZIBOzOgABAAAeszANBgkqhkiG9w0B
+# AQUFADBjMRMwEQYKCZImiZPyLGQBGRYDY29tMRwwGgYKCZImiZPyLGQBGRYMcGl6
+# emFleHByZXNzMRIwEAYKCZImiZPyLGQBGRYCYWQxGjAYBgNVBAMTEWFkLVBLSS1C
+# SVItMDAyLUNBMB4XDTE4MDcxMDA4NDc1N1oXDTE5MDcxMDA4NDc1N1owgZIxEzAR
+# BgoJkiaJk/IsZAEZFgNjb20xHDAaBgoJkiaJk/IsZAEZFgxwaXp6YWV4cHJlc3Mx
+# EjAQBgoJkiaJk/IsZAEZFgJhZDERMA8GA1UECxMISW50ZXJuYWwxDjAMBgNVBAsT
+# BVVzZXJzMRAwDgYDVQQLEwdTeXN0ZW1zMRQwEgYDVQQDEwtTaGFuZSBCYXJyeTCC
+# ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMMX94iKeHqaW3FtLcJ0rMqH
+# pKohRo99Z8v/xb0uf86EBESluhfPAlKfn9Y9zSfS3lrMsALbrdSYOCEW+Z/eDDig
+# KAWKU4iCntCNAzgF0cZ0vzxvRb7XitPLu6X1xxjke8uKv+VkAN4Yuhv1RkelMBQB
+# 91VFtLF/68mAuneCaliCWHoiVHuhd5Do+IvJKnryyg1cqoLOOHg+D2N5UZBUJiqc
+# a5Iqg4tP0NDCepwuZnsYViEC3iIG3M2XOkodSQFN0mY0RN21LaoFJEzReNM7yi/q
+# rBkQm+ldgX66yLQxejeHojxG69X9ekQFmE2Ua555ZZhGX1EUh8487fv/uV6BZ8kC
+# AwEAAaOCAuIwggLeMCUGCSsGAQQBgjcUAgQYHhYAQwBvAGQAZQBTAGkAZwBuAGkA
+# bgBnMBMGA1UdJQQMMAoGCCsGAQUFBwMDMA4GA1UdDwEB/wQEAwIHgDAdBgNVHQ4E
+# FgQU0ZheCCoYBK3esCaJ+y1r4Axds+kwHwYDVR0jBBgwFoAUUlyTzpca+KRDM0v9
+# 7pLmDcTPX0wwgd4GA1UdHwSB1jCB0zCB0KCBzaCByoaBx2xkYXA6Ly8vQ049YWQt
+# UEtJLUJJUi0wMDItQ0EsQ049cGtpLWJpci0wMDIsQ049Q0RQLENOPVB1YmxpYyUy
+# MEtleSUyMFNlcnZpY2VzLENOPVNlcnZpY2VzLENOPUNvbmZpZ3VyYXRpb24sREM9
+# YWQsREM9cGl6emFleHByZXNzLERDPWNvbT9jZXJ0aWZpY2F0ZVJldm9jYXRpb25M
+# aXN0P2Jhc2U/b2JqZWN0Q2xhc3M9Y1JMRGlzdHJpYnV0aW9uUG9pbnQwggE0Bggr
+# BgEFBQcBAQSCASYwggEiMIG7BggrBgEFBQcwAoaBrmxkYXA6Ly8vQ049YWQtUEtJ
+# LUJJUi0wMDItQ0EsQ049QUlBLENOPVB1YmxpYyUyMEtleSUyMFNlcnZpY2VzLENO
+# PVNlcnZpY2VzLENOPUNvbmZpZ3VyYXRpb24sREM9YWQsREM9cGl6emFleHByZXNz
+# LERDPWNvbT9jQUNlcnRpZmljYXRlP2Jhc2U/b2JqZWN0Q2xhc3M9Y2VydGlmaWNh
+# dGlvbkF1dGhvcml0eTBiBggrBgEFBQcwAoZWaHR0cDovL3BraS1iaXItMDAyL0Nl
+# cnRFbnJvbGwvcGtpLWJpci0wMDIuYWQucGl6emFleHByZXNzLmNvbV9hZC1QS0kt
+# QklSLTAwMi1DQSgxKS5jcnQwNwYDVR0RBDAwLqAsBgorBgEEAYI3FAIDoB4MHFNo
+# YW5lLkJhcnJ5QHBpenphZXhwcmVzcy5jb20wDQYJKoZIhvcNAQEFBQADggEBAHq/
+# RsuEJ3dId3jOZJSYyieOU65QK1wWmVjLRo9wYJfLz3Zdq3YSF9FpHoS10lNFDezL
+# GA/yepigwMxx9+sOmx2bSBgQuBTdOeRQd6Qb7/zN/4N6CHnSTzLATh5gW7wHvRKT
+# cZb+cFumOOl193ojw7PavwEBtwOZRBQDFt5ibaYXjXEKPo0ZtSOsvQftAPD4WklM
+# rco73KXUKMwXxNknDV28H94wxXQUTuCJ6CnNuos7Rxa5vkrUHN0v9oOV3lT2m5XQ
+# /DmpwkZIyGXrRJmfLdUNHKiD5Yf+vhTBZtMIoiFWxVFzrWIjBuX6hX1ViZk739kX
+# 9bNfKQv47f3hC9q5vDAxggIbMIICFwIBATB6MGMxEzARBgoJkiaJk/IsZAEZFgNj
+# b20xHDAaBgoJkiaJk/IsZAEZFgxwaXp6YWV4cHJlc3MxEjAQBgoJkiaJk/IsZAEZ
+# FgJhZDEaMBgGA1UEAxMRYWQtUEtJLUJJUi0wMDItQ0ECE2gAAB6zvC0CWSATszoA
+# AQAAHrMwCQYFKw4DAhoFAKB4MBgGCisGAQQBgjcCAQwxCjAIoAKAAKECgAAwGQYJ
+# KoZIhvcNAQkDMQwGCisGAQQBgjcCAQQwHAYKKwYBBAGCNwIBCzEOMAwGCisGAQQB
+# gjcCARUwIwYJKoZIhvcNAQkEMRYEFPa4qXFFPB+aMIP6aXSlP0qnH6BxMA0GCSqG
+# SIb3DQEBAQUABIIBAKSBSlODO+Mt4DSRLhhzIEF4teZA2DTz2L7zHrGp3X0o/9ZE
+# yMBTFJsj0qrRMujoDvQFGyvuGkqYws1Z2PO2UjbFrE7JHvHLRMI3SsOX0Nca1ps9
+# gWFQMyXEDSpyJVza/Thfsy8Wt7TPHydXtfg6cbmId/k79JMrHZO/ClR4DS2QftzH
+# rP95JSHS+KV/fQxN4h/t+eUyljkO4aUmixaynDkdGkkndPwfarNJX5c11vKgaFqg
+# WLNi3itAOJDMqi9ZfnM1nTjEnluzXlz0yT8dX4eixUi8Aea0wvU8iZc4kqpeNP33
+# CGuqbSAXki6a9vSIBeF1LXYsdHvymwKl9+8ovgQ=
+# SIG # End signature block
